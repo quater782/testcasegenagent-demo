@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>项目配置中心 · 数据基座</title>
+<style>
+  :root{color-scheme:light dark;--bg:#f5f6f8;--card:#fff;--bd:#e2e6ec;--mut:#6b7280;--tx:#1f2430;--ac:#2563eb;--ac2:#0e9f6e;--warn:#d97706;--bad:#dc2626;}
+  @media (prefers-color-scheme:dark){:root{--bg:#0d1117;--card:#161b22;--bd:#2a313c;--mut:#8b949e;--tx:#e6edf3;--ac:#4d8bff;--ac2:#3fb950;}}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--tx)}
+  header{padding:14px 22px;border-bottom:1px solid var(--bd);background:var(--card);display:flex;align-items:center;gap:18px;flex-wrap:wrap;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;margin:0}
+  header a{color:var(--ac);text-decoration:none;font-size:13px}
+  .wrap{padding:16px 22px;display:grid;grid-template-columns:300px 1fr 360px;gap:16px;align-items:start}
+  .panel{background:var(--card);border:1px solid var(--bd);border-radius:10px;min-width:0}
+  .panel .hd{padding:10px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-weight:600}
+  .panel .bd{padding:12px}
+  button{border:1px solid var(--bd);background:var(--ac);color:#fff;border-radius:8px;padding:7px 13px;cursor:pointer;font-size:13px}
+  button.ghost{background:transparent;color:var(--tx)}
+  button.sm{padding:3px 8px;font-size:12px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  input,select,textarea{width:100%;border:1px solid var(--bd);background:var(--card);color:var(--tx);border-radius:8px;padding:7px 9px;font-size:13px;font-family:inherit}
+  textarea{resize:vertical;min-height:56px}
+  label.fld{display:block;font-size:12px;color:var(--mut);margin:8px 0 3px}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .col{flex:1;min-width:120px}
+  .muted{color:var(--mut)}
+  .badge{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;border:1px solid var(--bd);color:var(--mut)}
+  .badge.ok{background:#bbf7d055;color:var(--ac2);border-color:var(--ac2)}
+  .badge.warn{background:#fde68a55;color:var(--warn);border-color:var(--warn)}
+  .list{max-height:70vh;overflow:auto}
+  .item{padding:9px 10px;border-bottom:1px solid var(--bd);cursor:pointer}
+  .item:hover{background:#6b728018}
+  .item.sel{background:var(--ac)14;box-shadow:inset 3px 0 0 var(--ac)}
+  .item .t{font-weight:600}
+  .item .m{font-size:12px;color:var(--mut)}
+  .graph{height:430px;border:1px solid var(--bd);border-radius:10px;background:#6b72800a;overflow:hidden}
+  svg{width:100%;height:100%}
+  .node circle{fill:var(--card);stroke:var(--ac);stroke-width:2}
+  .node text{fill:var(--tx);font-size:12px;text-anchor:middle;dominant-baseline:middle;pointer-events:none}
+  .node.sel circle{stroke:var(--warn);stroke-width:3}
+  .edge{stroke:var(--mut);stroke-width:1.4;opacity:.75}
+  .edge-label{fill:var(--mut);font-size:11px;text-anchor:middle}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border-bottom:1px solid var(--bd);padding:6px;text-align:left;vertical-align:top}
+  th{color:var(--mut);font-weight:600}
+  .zt{max-height:210px;overflow:auto;border:1px solid var(--bd);border-radius:8px;margin-top:8px}
+  .zt .item{font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>项目配置中心</h1>
+  <span class="muted">项目发现 · 本地目的地 · Dify 知识库 · 关系网</span>
+  <a href="/data" style="margin-left:auto">数据基座工作台</a>
+  <a href="/recommend">用例推荐 Agent</a>
+</header>
+
+<div class="wrap">
+  <section class="panel">
+    <div class="hd">项目列表 <button class="ghost sm" style="margin-left:auto" onclick="newProject()">新增</button></div>
+    <div class="bd">
+      <label class="fld" for="ztSelect">从禅道选择项目</label>
+      <select id="ztSelect"><option value="">正在加载禅道项目...</option></select>
+      <div class="row" style="margin-top:8px">
+        <label class="fld" for="ztQ" style="display:none">过滤禅道项目</label>
+        <input id="ztQ" placeholder="按项目名/编号过滤">
+        <button class="ghost sm" onclick="loadZentaoProjects()">刷新</button>
+        <button class="ghost sm" onclick="importSelectedZentao()">导入所选</button>
+      </div>
+      <div id="ztBox" class="muted" style="font-size:12px;margin-top:8px"></div>
+    </div>
+    <div class="list" id="projectList"></div>
+  </section>
+
+  <section class="panel">
+    <div class="hd">项目关系网
+      <span class="muted" style="font-weight:400">Shift 点击两个节点可新建关系</span>
+      <button class="ghost sm" style="margin-left:auto" onclick="saveRegistry()">保存 registry</button>
+    </div>
+    <div class="bd">
+      <div class="graph"><svg id="graph"></svg></div>
+      <div style="margin-top:12px">
+        <div class="row" style="margin-bottom:6px"><b>关系边</b><button class="ghost sm" onclick="addRelation()">新增关系</button></div>
+        <table>
+          <thead><tr><th>From</th><th>To</th><th>类型</th><th>权重</th><th>说明</th><th></th></tr></thead>
+          <tbody id="relations"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="hd">项目配置 <span id="saveHint" class="muted" style="font-weight:400"></span></div>
+    <div class="bd" id="formBox"><span class="muted">选择一个项目开始编辑。</span></div>
+  </section>
+</div>
+
+<script src="./ui.js"></script>
+<script src="./mock-api.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const relationLabel={
+  generation:'代际',same_chip:'同芯片',same_sdk:'同SDK',
+  same_product_line:'同产品线',positioning_reference:'定位参考',
+  feature_inheritance:'功能继承',common_problem_family:'通用问题族',
+  manual_reference:'人工参考'
+};
+let registry={projects:[],relations:[],relationTypes:[]};
+let selected='', shiftFrom='';
+let zentaoProjects=[];
+
+async function jget(u){const r=await fetch(u);return r.json();}
+async function jpost(u,b){const r=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});return r.json();}
+function project(id){return (registry.projects||[]).find(p=>p.id===id);}
+function markDirty(){ $('#saveHint').textContent='· 有未保存修改'; }
+
+async function load(){
+  registry=await jget('/api/projects/registry');
+  if(!selected && registry.projects.length) selected=registry.projects[0].id;
+  renderAll();
+  loadZentaoProjects();
+}
+function renderAll(){renderList();renderForm();renderGraph();renderRelations();}
+function renderList(){
+  $('#projectList').innerHTML=(registry.projects||[]).map(p=>`<div class="item ${p.id===selected?'sel':''}" onclick="selected='${esc(p.id)}';renderAll()">
+    <div class="t">${esc(p.displayName||p.id)}</div>
+    <div class="m">${esc(p.id)} · ${esc(p.productLine||'未分产品线')} · ${esc(p.dataDir||'')}</div>
+  </div>`).join('') || '<div class="muted" style="padding:10px">暂无项目</div>';
+}
+function renderForm(){
+  const p=project(selected);
+  if(!p){$('#formBox').innerHTML='<span class="muted">选择一个项目开始编辑。</span>';return;}
+  const k=p.knowledge||{}, z=p.zentao||{}, t=p.taxonomy||{}, cc=p.caseConfig||{};
+  const libs=registry.caseLibraries||[];
+  const selectedLibs=new Set(cc.baselineLibraries||[]);
+  const libChecks=libs.length?libs.map(lib=>`<label class="row" style="justify-content:space-between;border:1px solid var(--bd);border-radius:8px;padding:6px 8px;margin:5px 0">
+    <span><b>${esc(lib.displayName||lib.id)}</b><br><span class="muted">${esc(lib.id)} · ${esc(lib.kind||'excel')} · ${esc(lib.path||'未设置')}</span></span>
+    <input type="checkbox" style="width:auto" ${selectedLibs.has(lib.id)?'checked':''} onchange="setCaseLibrary('${esc(lib.id)}',this.checked)">
+  </label>`).join(''):'<span class="muted">暂无全局基准库。可直接编辑 registry.json 的 caseLibraries。</span>';
+  const libOptions=libs.map(lib=>`<option value="${esc(lib.id)}" ${cc.taxonomyLibrary===lib.id?'selected':''}>${esc(lib.displayName||lib.id)}</option>`).join('');
+  $('#formBox').innerHTML=`
+    <label class="fld">项目 ID</label><input id="f-id" value="${esc(p.id)}" disabled>
+    <label class="fld">展示名</label><input id="f-name" value="${esc(p.displayName||'')}" oninput="upd('displayName',this.value)">
+    <div class="row">
+      <div class="col"><label class="fld">产品线</label><input value="${esc(p.productLine||'')}" oninput="upd('productLine',this.value)"></div>
+      <div class="col"><label class="fld">状态</label><input value="${esc(p.status||'active')}" oninput="upd('status',this.value)"></div>
+    </div>
+    <label class="fld">本地目的地 dataDir</label><input value="${esc(p.dataDir||'')}" oninput="upd('dataDir',this.value)">
+    <div class="row">
+      <div class="col"><label class="fld">禅道 project</label><input type="number" value="${esc(z.project||'')}" oninput="updNested('zentao','project',this.value?+this.value:null)"></div>
+      <div class="col"><label class="fld">禅道 product</label><input type="number" value="${esc(z.product||'')}" oninput="updNested('zentao','product',this.value?+this.value:null)"></div>
+    </div>
+    <label class="fld">别名（逗号分隔）</label><input value="${esc((p.aliases||[]).join(','))}" oninput="upd('aliases',this.value.split(',').map(x=>x.trim()).filter(Boolean))">
+    <label class="fld">分类树来源</label><input value="${esc(t.source||'')}" oninput="updNested('taxonomy','source',this.value)">
+    <hr style="border:0;border-top:1px solid var(--bd);margin:14px 0">
+    <div class="row"><b>基准用例库</b><span class="muted">项目可用用例 = 所选基准库 ∪ 禅道新增用例</span></div>
+    <label class="fld">绑定的基准库</label>
+    <div>${libChecks}</div>
+    <div class="row">
+      <div class="col"><label class="fld">包含禅道用例</label><select onchange="updCaseConfig('includeZentaoCases',this.value==='true')"><option value="true" ${cc.includeZentaoCases!==false?'selected':''}>包含</option><option value="false" ${cc.includeZentaoCases===false?'selected':''}>不包含</option></select></div>
+      <div class="col"><label class="fld">合并策略</label><select onchange="updCaseConfig('mergeStrategy',this.value)"><option value="caseCode_then_fingerprint" ${(cc.mergeStrategy||'caseCode_then_fingerprint')==='caseCode_then_fingerprint'?'selected':''}>编码优先 + 指纹</option><option value="caseCode_only" ${cc.mergeStrategy==='caseCode_only'?'selected':''}>仅编码</option></select></div>
+    </div>
+    <label class="fld">分类树来源库</label><select onchange="updCaseConfig('taxonomyLibrary',this.value)"><option value="">按 taxonomy.source</option>${libOptions}</select>
+    <hr style="border:0;border-top:1px solid var(--bd);margin:14px 0">
+    <div class="row"><b>知识库</b><span id="kbStatus" class="muted"></span></div>
+    <div class="row">
+      <div class="col"><label class="fld">Provider</label><select onchange="updNested('knowledge','provider',this.value)"><option value="dify" ${k.provider==='dify'?'selected':''}>dify</option><option value="local_vec" ${k.provider==='local_vec'?'selected':''}>local_vec</option></select></div>
+      <div class="col"><label class="fld">启用</label><select onchange="updNested('knowledge','enabled',this.value==='true')"><option value="true" ${k.enabled!==false?'selected':''}>启用</option><option value="false" ${k.enabled===false?'selected':''}>禁用</option></select></div>
+    </div>
+    <label class="fld">Dify API Base（非密钥）</label><input value="${esc(k.apiBase||'')}" oninput="updNested('knowledge','apiBase',this.value)" placeholder="空则用 .env 全局 DIFY_API_BASE">
+    <label class="fld">Dify Dataset ID（非密钥）</label><input value="${esc(k.datasetId||'')}" oninput="updNested('knowledge','datasetId',this.value)" placeholder="空则用 .env 全局或 DIFY_DATASET_ID_${esc(p.id.toUpperCase())}">
+    <div class="row" style="margin-top:10px">
+      <button class="ghost sm" onclick="loadProjectStatus()">查看状态</button>
+      <button class="ghost sm" onclick="testKnowledge()">测试知识库</button>
+      <button class="ghost sm" onclick="deleteProject()">删除项目</button>
+    </div>`;
+  loadProjectStatus();
+}
+function upd(key,val){const p=project(selected);if(!p)return;p[key]=val;markDirty();renderList();renderGraph();}
+function updNested(group,key,val){const p=project(selected);if(!p)return;p[group]=p[group]||{};p[group][key]=val;markDirty();}
+function updCaseConfig(key,val){const p=project(selected);if(!p)return;p.caseConfig=p.caseConfig||{};p.caseConfig[key]=val;markDirty();}
+function setCaseLibrary(id,checked){
+  const p=project(selected);if(!p)return;
+  p.caseConfig=p.caseConfig||{};
+  const set=new Set(p.caseConfig.baselineLibraries||[]);
+  if(checked)set.add(id);else set.delete(id);
+  p.caseConfig.baselineLibraries=[...set];
+  if(!p.caseConfig.taxonomyLibrary&&checked)p.caseConfig.taxonomyLibrary=id;
+  markDirty();
+}
+async function loadProjectStatus(){
+  if(!selected)return;
+  const d=await jget('/api/projects/'+encodeURIComponent(selected)+'/status');
+  const kb=d.knowledge||{};
+  $('#kbStatus').innerHTML=`<span class="badge ${kb.configured?'ok':'warn'}">${kb.configured?'已配置':'未配置'}</span> <span class="muted">dataset ${esc(kb.datasetIdMasked||'未设置')} · bug ${d.bugCount||0} · insight ${d.insightCount||0} · case ${d.caseCount||0}</span>`;
+}
+async function testKnowledge(){
+  if(!selected)return;
+  await saveRegistry(false);
+  const d=await jpost('/api/projects/'+encodeURIComponent(selected)+'/knowledge/test',{query:'项目介绍 功能继承 测试策略',k:3});
+  if(d.ok) UI.alert(`知识库可用，返回 ${d.count||0} 条。`,{title:'测试成功'});
+  else UI.alert(d.error||'知识库不可用',{title:'测试失败'});
+}
+function newProject(){
+  const id='project-'+Date.now().toString(36);
+  registry.projects.push({id,displayName:id,aliases:[],status:'active',productLine:'',dataDir:'projects/'+id,zentao:{project:null,product:null},knowledge:{provider:'dify',enabled:true,apiBase:'',datasetId:'',topK:5,scoreThreshold:null},taxonomy:{source:''},caseConfig:{baselineLibraries:[],includeZentaoCases:true,mergeStrategy:'caseCode_then_fingerprint',taxonomyLibrary:''}});
+  selected=id; markDirty(); renderAll();
+}
+function deleteProject(){
+  if(selected==='atlas-mobile'){UI.toast('Atlas Mobile 是默认 Mock 项目，不建议删除','warn');return;}
+  registry.projects=registry.projects.filter(p=>p.id!==selected);
+  registry.relations=registry.relations.filter(r=>r.from!==selected && r.to!==selected);
+  selected=(registry.projects[0]||{}).id||''; markDirty(); renderAll();
+}
+function relationOptions(v){return (registry.relationTypes||[]).map(t=>`<option value="${esc(t)}" ${t===v?'selected':''}>${esc(relationLabel[t]||t)}</option>`).join('');}
+function renderRelations(){
+  const opts=(registry.projects||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.displayName||p.id)}</option>`).join('');
+  $('#relations').innerHTML=(registry.relations||[]).map((r,i)=>`<tr>
+    <td><select onchange="registry.relations[${i}].from=this.value;markDirty();renderGraph()">${opts.replace(`value="${esc(r.from)}"`,`value="${esc(r.from)}" selected`)}</select></td>
+    <td><select onchange="registry.relations[${i}].to=this.value;markDirty();renderGraph()">${opts.replace(`value="${esc(r.to)}"`,`value="${esc(r.to)}" selected`)}</select></td>
+    <td><select onchange="registry.relations[${i}].type=this.value;markDirty();renderGraph()">${relationOptions(r.type)}</select></td>
+    <td><input type="number" min="0" max="1" step="0.05" value="${esc(r.weight??0.6)}" onchange="registry.relations[${i}].weight=+this.value;markDirty();renderGraph()"></td>
+    <td><textarea onchange="registry.relations[${i}].rationale=this.value;markDirty()">${esc(r.rationale||'')}</textarea></td>
+    <td><button class="ghost sm" onclick="registry.relations.splice(${i},1);markDirty();renderAll()">删除</button></td>
+  </tr>`).join('') || '<tr><td colspan="6" class="muted">暂无关系</td></tr>';
+}
+function addRelation(from,to){
+  const ps=registry.projects||[];
+  if(ps.length<2){UI.toast('至少需要两个项目','warn');return;}
+  registry.relations.push({from:from||ps[0].id,to:to||ps[1].id,type:'manual_reference',weight:0.6,direction:'bidirectional',rationale:'',evidence:[]});
+  markDirty(); renderAll();
+}
+function renderGraph(){
+  const svg=$('#graph'), ps=registry.projects||[], rs=registry.relations||[];
+  const w=svg.clientWidth||600,h=svg.clientHeight||420,cx=w/2,cy=h/2,rad=Math.max(90,Math.min(w,h)/2-70);
+  const pos={};
+  ps.forEach((p,i)=>{const a=(Math.PI*2*i/Math.max(ps.length,1))-Math.PI/2;pos[p.id]={x:cx+Math.cos(a)*rad,y:cy+Math.sin(a)*rad};});
+  const edges=rs.map(r=>{const a=pos[r.from],b=pos[r.to];if(!a||!b)return '';const mx=(a.x+b.x)/2,my=(a.y+b.y)/2;return `<line class="edge" x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"></line><text class="edge-label" x="${mx}" y="${my-4}">${esc(relationLabel[r.type]||r.type)} ${Number(r.weight||0).toFixed(2)}</text>`;}).join('');
+  const nodes=ps.map(p=>{const o=pos[p.id];return `<g class="node ${p.id===selected?'sel':''}" onclick="nodeClick(event,'${esc(p.id)}')"><circle cx="${o.x}" cy="${o.y}" r="34"></circle><text x="${o.x}" y="${o.y}">${esc((p.displayName||p.id).slice(0,10))}</text></g>`;}).join('');
+  svg.innerHTML=edges+nodes;
+}
+function nodeClick(ev,id){
+  if(ev.shiftKey){
+    if(!shiftFrom){shiftFrom=id;UI.toast('已选择起点：'+id+'，再 Shift 点击终点','ok');return;}
+    if(shiftFrom!==id)addRelation(shiftFrom,id);
+    shiftFrom='';
+    return;
+  }
+  selected=id;renderAll();
+}
+async function saveRegistry(toast=true){
+  const r=await jpost('/api/projects/registry',{schemaVersion:1,caseLibraries:registry.caseLibraries||[],projects:registry.projects,relations:registry.relations});
+  if(r.ok===false){UI.toast(r.error||'保存失败','err');return false;}
+  registry={...registry,...r,relationTypes:registry.relationTypes};
+  $('#saveHint').textContent='';
+  if(toast) UI.toast('已保存 registry','ok');
+  renderAll();
+  return true;
+}
+async function loadZentaoProjects(){
+  const q=encodeURIComponent($('#ztQ').value.trim());
+  $('#ztSelect').innerHTML='<option value="">正在加载禅道项目...</option>';
+  $('#ztBox').textContent='';
+  const d=await jget('/api/zentao/projects?q='+q+'&limit=200');
+  if(!d.ok){
+    zentaoProjects=[];
+    $('#ztSelect').innerHTML='<option value="">无法连接禅道，可手动新增项目</option>';
+    $('#ztBox').textContent=d.hint||d.error||'无法连接禅道';
+    return;
+  }
+  zentaoProjects=d.projects||[];
+  $('#ztSelect').innerHTML=zentaoProjects.map((p,i)=>{
+    const product=p.product?` · product #${esc(p.product)}${p.productName?' '+esc(p.productName):''}`:'';
+    const code=p.code?` · ${esc(p.code)}`:'';
+    return `<option value="${i}">#${esc(p.id)} · ${esc(p.name||p.code||p.id)}${code}${product}</option>`;
+  }).join('') || '<option value="">未找到禅道项目</option>';
+  $('#ztBox').textContent=`已从禅道加载 ${zentaoProjects.length} 个项目；选择后点击“导入所选”。`;
+}
+function importSelectedZentao(){
+  const idx=+$('#ztSelect').value;
+  const p=zentaoProjects[idx];
+  if(!p){UI.toast('请先选择一个禅道项目','warn');return;}
+  importZentao(p);
+}
+function importZentao(p){
+  const id=String(p.code||p.name||('project-'+p.id)).toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-|-$/g,'') || ('project-'+p.id);
+  const exists=registry.projects.find(x=>x.id===id || (x.zentao&&String(x.zentao.project)===String(p.id)));
+  if(exists){
+    selected=exists.id;
+    UI.toast('该禅道项目已在配置中，已切换到已有项目','warn');
+    renderAll();
+    return;
+  }
+  registry.projects.push({id,displayName:p.name||id,aliases:[p.code].filter(Boolean),status:p.status||'active',productLine:p.productName||'',dataDir:'projects/'+id,zentao:{project:+p.id,product:p.product?+p.product:null},knowledge:{provider:'dify',enabled:true,apiBase:'',datasetId:'',topK:5,scoreThreshold:null},taxonomy:{source:p.productName?'TWS基准测试用例.xlsx':''},caseConfig:{baselineLibraries:['tws_baseline'],includeZentaoCases:true,mergeStrategy:'caseCode_then_fingerprint',taxonomyLibrary:'tws_baseline'}});
+  selected=id; markDirty(); renderAll();
+}
+load();
+</script>
+</body>
+</html>
