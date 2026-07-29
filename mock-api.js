@@ -418,13 +418,15 @@
     { workItemId: "WI-XLS-10", order: 10, displayName: "缓存版本冲突", rawInput: "Excel 第 11 行｜本地缓存版本冲突处理｜P1" }
   ];
 
-  function makeExecution(status = "completed", progress = agentTaskTemplates.length, workItems = defaultWorkItems, scenario = "text", executionId = "EXEC-MOCK-READY") {
-    const taskStatuses = agentTaskTemplates.map((_, index) => {
-      if (status === "completed") return "succeeded";
-      if (index < progress) return "succeeded";
-      if (index < progress + 3) return "running";
-      return "pending";
-    });
+  function makeExecution(status = "completed", progress = agentTaskTemplates.length, workItems = defaultWorkItems, scenario = "text", executionId = "EXEC-MOCK-READY", statusOverride = null) {
+    const taskStatuses = Array.isArray(statusOverride) && statusOverride.length === agentTaskTemplates.length
+      ? statusOverride
+      : agentTaskTemplates.map((_, index) => {
+        if (status === "completed") return "succeeded";
+        if (index < progress) return "succeeded";
+        if (index < progress + 3) return "running";
+        return "pending";
+      });
     return {
       executionId,
       turnId: "TURN-MOCK-02",
@@ -560,6 +562,116 @@
     });
   }
 
+  let turnSerial = 2;
+  function scheduleFor(record, delay, callback) {
+    const timer = setTimeout(callback, delay);
+    record.timers.push(timer);
+    return timer;
+  }
+
+  function beginMainTurn(record, options = {}) {
+    turnSerial += 1;
+    const conversationId = record.conversation.conversationId;
+    const turnId = `TURN-MOCK-MAIN-${String(turnSerial).padStart(3, "0")}`;
+    const answer = String(options.answer || "");
+    const thought = String(options.thought || "Thought｜正在理解用户意图并整理下一步。");
+    const secondThought = String(options.secondThought || "");
+    const tool = String(options.tool || "conversation_memory");
+    const action = String(options.action || "Action｜读取当前会话约束");
+    const observation = String(options.observation || "Observation｜已取得完成回复所需的信息");
+    const answerStart = Number(options.answerStart || 2350);
+    const charDelay = Number(options.charDelay || 42);
+    const chars = Array.from(answer);
+
+    record.status.runContext = record.status.runContext || {};
+    record.status.runContext.activeTurnId = turnId;
+    record.status.runContext.lastEventAt = nowIso();
+    record.status.conversation.status = "running";
+    record.conversation.updatedAt = nowIso();
+
+    scheduleFor(record, 120, () => {
+      emitRuntime(conversationId, "main_loop_progress", {
+        turnId,
+        step: 1,
+        maxSteps: secondThought ? 2 : 1,
+        remaining: secondThought ? 1 : 0
+      });
+    });
+    scheduleFor(record, 340, () => {
+      emitRuntime(conversationId, "main_reasoning_delta", {
+        turnId,
+        phase: "main_loop",
+        text: thought,
+        delta: thought
+      });
+    });
+    scheduleFor(record, 900, () => {
+      emitRuntime(conversationId, "main_tool_event", {
+        turnId,
+        name: tool,
+        status: "running",
+        detail: action
+      });
+    });
+    scheduleFor(record, 1580, () => {
+      emitRuntime(conversationId, "main_tool_event", {
+        turnId,
+        name: tool,
+        status: "completed",
+        detail: observation
+      });
+    });
+    if (secondThought) {
+      scheduleFor(record, 1880, () => {
+        emitRuntime(conversationId, "main_loop_progress", {
+          turnId,
+          step: 2,
+          maxSteps: 2,
+          remaining: 0
+        });
+        emitRuntime(conversationId, "main_reasoning_delta", {
+          turnId,
+          phase: "main_loop",
+          text: secondThought,
+          delta: secondThought
+        });
+      });
+    }
+
+    chars.forEach((char, index) => {
+      scheduleFor(record, answerStart + index * charDelay, () => {
+        emitRuntime(conversationId, "main_answer_delta", {
+          turnId,
+          text: chars.slice(0, index + 1).join(""),
+          delta: char
+        });
+      });
+    });
+
+    const completeAfter = answerStart + Math.max(1, chars.length) * charDelay + 260;
+    scheduleFor(record, completeAfter, () => {
+      record.status.messages.push({
+        messageId: `${conversationId}-assistant-${turnSerial}-${Date.now()}`,
+        role: "assistant",
+        type: "chat",
+        content: answer,
+        payload: { turnId },
+        createdAt: nowIso()
+      });
+      record.status.runContext.activeTurnId = "";
+      record.status.runContext.lastEventAt = nowIso();
+      record.status.conversation.status = record.status.runContext.activeExecutionId
+        ? "running"
+        : (record.conversation.phase >= 2 && record.status.activeArtifact ? "completed" : "idle");
+      record.conversation.updatedAt = nowIso();
+      record.conversation.messageCount = record.status.messages.length;
+      record.conversation.latestMessagePreview = answer.slice(0, 60);
+      if (typeof options.onComplete === "function") options.onComplete(turnId);
+      emitRuntime(conversationId, "turn_completed", { turnId });
+    });
+    return { turnId, completeAfter };
+  }
+
   function newConversation(projectId = "atlas-mobile", mode = "auto") {
     Array.from(conversations.entries()).forEach(([conversationId, record]) => {
       if (!conversationId.startsWith("CONV-MOCK-LIVE-")) return;
@@ -618,7 +730,8 @@
     const scenario = options.scenario || record.scenario || record.conversation.scenario || "text";
     const workItems = scenario === "excel" ? excelWorkItems : defaultWorkItems;
     const executionId = `EXEC-MOCK-${String(executionSerial).padStart(3, "0")}`;
-    const execution = makeExecution("running", 0, workItems, scenario, executionId);
+    const firstBatchRunning = ["running", "running", "running", "running", "running", "pending", "pending", "pending", "pending", "pending"];
+    const execution = makeExecution("running", 0, workItems, scenario, executionId, firstBatchRunning);
     const artifact = artifactFor(workItems, 0);
     const initialResults = workerResultsFor(execution, artifact);
     record.status.messages.push({
@@ -647,39 +760,102 @@
     record.status.conversation.status = "running";
     emitRuntime(record.conversation.conversationId, "execution_created", { execution });
 
-    const updates = [
-      { after: 2600, progress: 1, count: 1, text: "Bug 关联检索 Agent 已锁定直接关联用例" },
-      { after: 3700, progress: 2, count: 2, text: "同模块用例检索 Agent 已完成历史用例召回" },
-      { after: 4800, progress: 3, count: 3, text: "语义召回 Agent 已补充相似场景" },
-      { after: 5900, progress: 4, count: 4, text: "项目知识检索 Agent 已读取设计与团队经验" },
-      { after: 7000, progress: 5, count: 5, text: "跨项目关系 Agent 已完成风险参考检索" },
-      { after: 8100, progress: 6, count: 6, text: "历史缺陷检索 Agent 已汇总复发模式" },
-      { after: 9200, progress: 7, count: 7, text: "边界风险分析 Agent 已识别组合边界" },
-      { after: 10300, progress: 8, count: 8, text: "用例生成 Agent 已补齐未覆盖场景" },
-      { after: 11400, progress: 9, count: 9, text: "覆盖去重 Agent 已合并重复项与证据链" },
-      { after: 12500, progress: 10, count: 10, text: scenario === "excel" ? "Excel 结果编排 Agent 已完成工作簿结构" : "结果编排 Agent 已完成推荐地图" }
-    ];
-    updates.forEach((update) => {
-      const timer = setTimeout(() => {
-        const current = makeExecution("running", update.progress, workItems, scenario, executionId);
-        record.status.runContext.executions[current.executionId] = current;
-        const liveArtifact = artifactFor(workItems, update.count);
-        record.status.runContext.activeArtifact = liveArtifact;
-        record.status.runContext.currentResultView = liveArtifact;
-        record.status.runContext.workerResults = workerResultsFor(current, liveArtifact);
-        record.status.activeArtifact = liveArtifact;
-        record.status.lastSeq = ++eventSeq;
-        emitRuntime(record.conversation.conversationId, "execution_patch", { execution: current });
-        emitRuntime(record.conversation.conversationId, "result_view", { currentResultView: liveArtifact });
-        emitRuntime(record.conversation.conversationId, "worker_progress", {
-          taskId: current.tasks[Math.min(current.tasks.length - 1, Math.max(0, update.progress - 1))].taskId,
-          text: update.text
+    function emitWorkerReact(batchIndexes, baseDelay) {
+      const offsets = [0, 130, 55, 210, 95];
+      batchIndexes.forEach((taskIndex, localIndex) => {
+        const task = execution.tasks[taskIndex];
+        const template = agentTaskTemplates[taskIndex];
+        const offset = offsets[localIndex] || 0;
+        scheduleFor(record, baseDelay + offset, () => {
+          emitRuntime(record.conversation.conversationId, "thought_delta", {
+            taskId: task.taskId,
+            step: 1,
+            streamKind: "reasoning",
+            text: `Thought｜理解第 ${taskIndex + 1} 个输入，规划证据检索与用例覆盖。`,
+            delta: `Thought｜理解第 ${taskIndex + 1} 个输入，规划证据检索与用例覆盖。`
+          });
         });
-      }, update.after);
-      record.timers.push(timer);
-    });
+        scheduleFor(record, baseDelay + 820 + offset, () => {
+          emitRuntime(record.conversation.conversationId, "tool_started", {
+            taskId: task.taskId,
+            tool: template.tool,
+            querySummary: `Action｜${template.note}`
+          });
+        });
+        scheduleFor(record, baseDelay + 2380 + offset, () => {
+          emitRuntime(record.conversation.conversationId, "tool_finished", {
+            taskId: task.taskId,
+            tool: template.tool,
+            resultSummary: taskIndex < 2
+              ? "Observation｜命中 Bug 直接关联用例，保留为必回归"
+              : "Observation｜已取得可解释的历史证据与候选覆盖"
+          });
+        });
+      });
+    }
 
-    const finishTimer = setTimeout(() => {
+    function applyExecutionSnapshot(update) {
+      const current = makeExecution("running", update.count, workItems, scenario, executionId, update.statuses);
+      record.status.runContext.executions[current.executionId] = current;
+      const liveArtifact = artifactFor(workItems, update.count);
+      record.status.runContext.activeArtifact = liveArtifact;
+      record.status.runContext.currentResultView = liveArtifact;
+      record.status.runContext.workerResults = workerResultsFor(current, liveArtifact);
+      record.status.activeArtifact = liveArtifact;
+      emitRuntime(record.conversation.conversationId, "execution_patch", { execution: current });
+      emitRuntime(record.conversation.conversationId, "result_view", { currentResultView: liveArtifact });
+      (update.completed || []).forEach((taskIndex) => {
+        const task = current.tasks[taskIndex];
+        emitRuntime(record.conversation.conversationId, "worker_progress", {
+          taskId: task.taskId,
+          text: `Observation｜${task.agentName} 已形成可执行推荐`
+        });
+      });
+    }
+
+    emitWorkerReact([0, 1, 2, 3, 4], 420);
+    const updates = [
+      {
+        after: 5200,
+        count: 2,
+        statuses: ["succeeded", "running", "succeeded", "running", "running", "pending", "pending", "pending", "pending", "pending"],
+        completed: [0, 2]
+      },
+      {
+        after: 6500,
+        count: 4,
+        statuses: ["succeeded", "succeeded", "succeeded", "running", "succeeded", "pending", "pending", "pending", "pending", "pending"],
+        completed: [1, 4]
+      },
+      {
+        after: 7600,
+        count: 5,
+        statuses: ["succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "running", "running", "running", "running", "running"],
+        completed: [3]
+      },
+      {
+        after: 10800,
+        count: 7,
+        statuses: ["succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "running", "succeeded", "running", "running"],
+        completed: [5, 7]
+      },
+      {
+        after: 12200,
+        count: 9,
+        statuses: ["succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "running", "succeeded"],
+        completed: [6, 9]
+      },
+      {
+        after: 13800,
+        count: 10,
+        statuses: ["succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded", "succeeded"],
+        completed: [8]
+      }
+    ];
+    updates.forEach((update) => scheduleFor(record, update.after, () => applyExecutionSnapshot(update)));
+    scheduleFor(record, 7600, () => emitWorkerReact([5, 6, 7, 8, 9], 0));
+
+    scheduleFor(record, 14600, () => {
       const completed = makeExecution("completed", agentTaskTemplates.length, workItems, scenario, executionId);
       const finalArtifact = artifactFor(workItems);
       record.status.runContext.executions[completed.executionId] = completed;
@@ -689,16 +865,7 @@
       record.status.runContext.currentResultView = finalArtifact;
       record.status.runContext.workerResults = workerResultsFor(completed, finalArtifact);
       record.status.activeArtifact = finalArtifact;
-      record.status.conversation.status = "completed";
-      record.status.messages.push({
-        messageId: `${record.conversation.conversationId}-done`,
-        role: "assistant",
-        type: "chat",
-        content: scenario === "excel"
-          ? "Excel 批量任务已完成：10 个子 Agent 分别处理 10 行修改点，汇总出 10 条唯一用例，其中 2 条为 Bug 关联必回归。你可以继续问优先级、删减理由或执行顺序。"
-          : "子 Agent 协作已完成：10 个子 Agent 汇总出 10 条唯一用例，其中 2 条 Bug 关联用例被锁定为必回归。你可以继续问我推荐依据、范围取舍或执行优先级。",
-        createdAt: nowIso()
-      });
+      record.status.conversation.status = "running";
       record.conversation.title = scenario === "excel" ? "批量用例分析10例" : "10项版本回归分析";
       record.status.conversation.title = record.conversation.title;
       record.status.conversation.phase = 2;
@@ -706,8 +873,16 @@
       record.conversation.messageCount = record.status.messages.length;
       record.conversation.latestMessagePreview = "10 个子 Agent 已完成推荐";
       emitRuntime(record.conversation.conversationId, "execution_finished", { execution: completed, artifact: finalArtifact });
-    }, 13800);
-    record.timers.push(finishTimer);
+      beginMainTurn(record, {
+        thought: "Thought｜10 个子 Agent 均已返回，正在核对用例数量、证据链与优先级。",
+        tool: "conversation_memory",
+        action: "Action｜读取两批子 Agent 的最终回传",
+        observation: "Observation｜共得到 10 条唯一用例，其中 2 条为 Bug 关联必回归",
+        answer: scenario === "excel"
+          ? "Excel 批量任务已完成：10 个子 Agent 分别处理 10 行修改点，汇总出 10 条唯一用例，其中 2 条为 Bug 关联必回归。你可以继续问优先级、删减理由或执行顺序。"
+          : "子 Agent 协作已完成：10 个子 Agent 汇总出 10 条唯一用例，其中 2 条 Bug 关联用例被锁定为必回归。你可以继续问我推荐依据、范围取舍或执行优先级。"
+      });
+    });
   }
 
   function addMessage(conversationId, body) {
@@ -726,53 +901,50 @@
     record.conversation.latestMessagePreview = content.slice(0, 60);
 
     if (/为什么|推荐依据|解释/.test(content) && record.conversation.phase >= 2) {
-      record.status.messages.push({
-        messageId: `${conversationId}-why-${Date.now()}`,
-        role: "assistant",
-        type: "chat",
-        content: "根据子 Agent 返回的证据，建议优先执行第 1、2、9 项：前两项与 BUG-99001 的历史用例直接关联，第 9 项涉及账号数据隔离，风险等级为 P0。其余项目可按 P1、P2 顺序执行。",
-        createdAt: nowIso()
+      beginMainTurn(record, {
+        thought: "Thought｜用户追问执行优先级，先从已完成的子 Agent 结果中提取风险与直接证据。",
+        tool: "conversation_memory",
+        action: "Action｜读取 10 项推荐结果与用户约束",
+        observation: "Observation｜第 1、2 项命中 Bug 直接关联，第 9 项属于账号数据隔离 P0 风险",
+        answer: "根据子 Agent 返回的证据，建议优先执行第 1、2、9 项：前两项与 BUG-99001 的历史用例直接关联，第 9 项涉及账号数据隔离，风险等级为 P0。其余项目可按 P1、P2 顺序执行。"
       });
-      emitRuntime(conversationId, "message", {});
       return { ok: true };
     }
 
     if (record.conversation.phase === 0) {
       record.conversation.phase = 1;
-      record.status.messages.push({
-        messageId: `${conversationId}-clarify`,
-        role: "assistant",
-        type: "chat",
-        content: "收到 10 个修改点。派发前确认一个推荐口径：优先复用已有用例，只有未覆盖的风险才生成新用例，对吗？",
-        createdAt: nowIso()
+      beginMainTurn(record, {
+        thought: "Thought｜识别到 10 个独立修改点；派发子 Agent 前需要先确认推荐口径。",
+        tool: "intent_clarifier",
+        action: "Action｜检查复用优先与新增边界",
+        observation: "Observation｜用户尚未明确已有用例与 AI 新增用例的取舍",
+        answer: "收到 10 个修改点。派发前确认一个推荐口径：优先复用已有用例，只有未覆盖的风险才生成新用例，对吗？"
       });
-      record.status.conversation.status = "idle";
-      emitRuntime(conversationId, "message", {});
       return { ok: true, requiresFollowup: true };
     }
 
     if (record.conversation.phase >= 2 && !/推荐|检索|补充|再查|重新/.test(content)) {
-      record.status.messages.push({
-        messageId: `${conversationId}-followup-${Date.now()}`,
-        role: "assistant",
-        type: "chat",
-        content: "收到。我会继续负责与你确认取舍和执行顺序；如果需要新增检索或重新推荐，我会再次拆成子任务交给子 Agent。",
-        createdAt: nowIso()
+      beginMainTurn(record, {
+        thought: "Thought｜这是对当前结果的沟通追问，不需要主 Agent 自行执行检索。",
+        tool: "conversation_memory",
+        action: "Action｜保留用户最新约束",
+        observation: "Observation｜后续如需重新推荐，再派发新的子 Agent 任务",
+        answer: "收到。我会继续负责与你确认取舍和执行顺序；如果需要新增检索或重新推荐，我会再次拆成子任务交给子 Agent。"
       });
-      emitRuntime(conversationId, "message", {});
       return { ok: true };
     }
 
     record.conversation.phase = 2;
-    record.status.messages.push({
-      messageId: `${conversationId}-dispatch-${Date.now()}`,
-      role: "assistant",
-      type: "chat",
-      content: "范围已确认。我负责保持对话和验收约束；现在将缺陷关联、已有用例检索、知识检索、风险分析和用例生成拆成 10 个子任务，交给子 Agent 并行完成。",
-      createdAt: nowIso()
+    beginMainTurn(record, {
+      thought: "Thought｜推荐口径已明确，主 Agent 只保留沟通与验收约束。",
+      secondThought: "Thought｜把 10 个输入拆成两批，每批 5 个子 Agent 并行执行。",
+      tool: "task_dispatcher",
+      action: "Action｜创建 10 个检索与推荐子任务",
+      observation: "Observation｜任务依赖已整理，可按 5 + 5 两批并行派发",
+      answer: "范围已确认。我负责保持对话和验收约束；现在将缺陷关联、已有用例检索、知识检索、风险分析和用例生成拆成 10 个子任务，交给子 Agent 分两批并行完成。",
+      onComplete: () => startExecution(record, { scenario: record.scenario || "text" })
     });
-    startExecution(record, { scenario: record.scenario || "text" });
-    return { ok: true, executionId: record.status.runContext.latestExecutionId };
+    return { ok: true, queued: true };
   }
 
   const reviewPending = [
@@ -974,15 +1146,16 @@
           payload: { fileName: "迭代回归范围_10例.xlsx", fileType: "Excel", rowCount: 10, fileSize: "28 KB" },
           createdAt: nowIso()
         });
-        record.status.messages.push({
-          messageId: `${conversationId}-excel-dispatch-${Date.now()}`,
-          role: "assistant",
-          type: "chat",
-          content: "已收到包含 10 行修改点的 Excel 文件。表格解析、检索、风险分析、用例生成和结果编排已逐项派给 10 个子 Agent。",
-          createdAt: nowIso()
+        beginMainTurn(record, {
+          thought: "Thought｜识别到一个包含 10 行修改点的 Excel 文件，需要先解析行结构再派发。",
+          secondThought: "Thought｜每行对应一个推荐任务，按 5 + 5 两批并行处理。",
+          tool: "task_dispatcher",
+          action: "Action｜解析 Excel 并创建 10 个子任务",
+          observation: "Observation｜10 行数据均通过格式校验，可进入检索与推荐",
+          answer: "已收到包含 10 行修改点的 Excel 文件。表格解析、检索、风险分析、用例生成和结果编排已逐项派给 10 个子 Agent，接下来分两批并行执行。",
+          onComplete: () => startExecution(record, { scenario: "excel" })
         });
-        startExecution(record, { scenario: "excel" });
-        return json({ ok: true, rowCount: excelWorkItems.length, imported: excelWorkItems.length, executionId: record.status.runContext.latestExecutionId });
+        return json({ ok: true, rowCount: excelWorkItems.length, imported: excelWorkItems.length, queued: true });
       }
       if (method === "PATCH") {
         Object.assign(record.conversation, body);
@@ -1121,7 +1294,11 @@
         await typeComposer(textDemoPrompt);
         await sleep(560);
         await window.sendMessage();
-        await sleep(2200);
+        await waitUntil(() => {
+          const send = document.querySelector("#sendButton");
+          return send && !send.disabled;
+        }, 12000);
+        await sleep(900);
         await typeComposer("对，已有用例优先；未覆盖的风险再生成新用例，并保留推荐依据。");
         await sleep(620);
         await window.sendMessage();
@@ -1129,13 +1306,20 @@
       await waitUntil(() => {
         const badge = document.querySelector(".execution summary .status.completed");
         return Boolean(badge);
-      }, 26000);
+      }, 36000);
+      await waitUntil(() => {
+        const send = document.querySelector("#sendButton");
+        return send && !send.disabled;
+      }, 12000);
       if (!excel) {
-        await sleep(1800);
+        await sleep(1200);
         await typeComposer("这 10 条里哪些必须优先执行？为什么？");
         await sleep(520);
         await window.sendMessage();
-        await sleep(1600);
+        await waitUntil(() => {
+          const send = document.querySelector("#sendButton");
+          return send && !send.disabled;
+        }, 12000);
       }
       if (typeof window.toast === "function") {
         window.toast(excel
