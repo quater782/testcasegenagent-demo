@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>归纳 / 反思工作台</title>
+<style>
+:root{color-scheme:light dark;--bg:#f5f6f8;--card:#fff;--bd:#e2e6ec;--fg:#1f2430;--mut:#6b7280;--acc:#2563eb;--good:#0e9f6e;--bad:#dc2626;--warn:#d97706;--tx:#1f2430;--ac:#2563eb;--ac2:#0e9f6e;--bubble-user:#e8f0fe;--box:#f8fafc}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#181b24;--bd:#2a2f3a;--fg:#e6e8ee;--mut:#9aa3b2;--acc:#5b8cff;--good:#3ecf8e;--bad:#ff6b6b;--warn:#ffb454;--tx:#e6e8ee;--ac:#5b8cff;--ac2:#3ecf8e;--bubble-user:#1d2740;--box:#0c0e14}}
+.pill.drafting{color:var(--warn);border-color:var(--warn)}
+.dot-pulse{display:inline-block;animation:dotp 1s infinite}
+@keyframes dotp{0%,100%{opacity:.3}50%{opacity:1}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 -apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif}
+a{color:var(--acc);text-decoration:none}
+header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--bd);background:var(--card)}
+header h1{font-size:16px;margin:0}
+header select{margin-left:10px;border:1px solid var(--bd);background:var(--bg);color:var(--fg);border-radius:7px;padding:5px 8px}
+.muted{color:var(--mut)}
+.wrap{display:grid;grid-template-columns:340px 1fr;gap:0;height:calc(100vh - 50px)}
+.side{border-right:1px solid var(--bd);overflow:auto;padding:10px}
+.main{overflow:auto;padding:16px 20px}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tab{flex:1;text-align:center;padding:7px 0;border:1px solid var(--bd);border-radius:8px;cursor:pointer;background:var(--card);font-size:13px}
+.tab.on{border-color:var(--acc);color:var(--acc)}
+.item{border:1px solid var(--bd);border-radius:9px;padding:9px 11px;margin-bottom:8px;cursor:pointer;background:var(--card)}
+.item:hover{border-color:var(--acc)}
+.item.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.item .t{font-weight:600;font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.item .m{font-size:11.5px;color:var(--mut);margin-top:3px}
+.pill{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;border:1px solid var(--bd)}
+.pill.done{color:var(--good);border-color:var(--good)}
+.pill.error{color:var(--bad);border-color:var(--bad)}
+.pill.running{color:var(--warn);border-color:var(--warn)}
+.pill.pending{color:var(--warn);border-color:var(--warn)}
+.pill.approved{color:var(--good);border-color:var(--good)}
+.pill.rejected{color:var(--mut)}
+.card{border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:var(--card)}
+.card h3{margin:0 0 8px;font-size:14px;color:var(--acc)}
+pre.box{background:var(--box);border:1px solid var(--bd);border-radius:8px;padding:10px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0}
+button{cursor:pointer;border:1px solid var(--bd);background:var(--card);color:var(--fg);border-radius:8px;padding:6px 12px;font-size:13px}
+button.acc{border-color:var(--acc);color:var(--acc)}
+button.good{border-color:var(--good);color:var(--good)}
+button.bad{border-color:var(--bad);color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.bubble{max-width:90%;border:1px solid var(--bd);border-radius:10px;padding:8px 11px;margin:6px 0}
+.bubble.u{align-self:flex-end;background:var(--bubble-user);margin-left:auto}
+.bubble.a{background:var(--card)}
+.chat{display:flex;flex-direction:column}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.kv{font-size:12.5px;color:var(--mut)}
+.kv b{color:var(--fg)}
+.empty{color:var(--mut);text-align:center;margin-top:60px}
+.fbline{font-size:12.5px;padding:3px 0;border-bottom:1px dashed var(--bd)}
+.fbline.useful b{color:var(--good)} .fbline.useless b{color:var(--bad)}
+.chat-role{font-size:11px;color:var(--mut);margin-bottom:2px}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔁 归纳 / 反思工作台</h1>
+  <span class="muted">对话 → 复盘草稿 → 人工审批 → 沉淀经验</span>
+  <select id="projectSelect" onchange="switchProject()" title="选择项目"></select>
+  <span style="margin-left:auto"><a href="/recommend.html">← 回推荐台</a></span>
+</header>
+<div class="wrap">
+  <div class="side">
+    <div class="tabs">
+      <div class="tab" data-tab="feedback" onclick="switchTab('feedback')">对话记录</div>
+      <div class="tab on" data-tab="pending" onclick="switchTab('pending')">待审 <span id="cntPending"></span></div>
+      <div class="tab" data-tab="cards" onclick="switchTab('cards')">经验库</div>
+    </div>
+    <div id="list"></div>
+  </div>
+  <div class="main" id="main"><div class="empty">从左侧选择一项查看详情</div></div>
+</div>
+<script src="./ui.js"></script>
+<script src="./mock-api.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const jget=u=>fetch(u).then(r=>r.json());
+const jpost=(u,b)=>fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})}).then(r=>r.json());
+let tab='pending', sel=null, projectId='atlas-mobile', feedbackGroups=[];
+
+function switchTab(t){tab=t;document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.dataset.tab===t));loadList();}
+
+function roleLabel(role){return({user:'用户',assistant:'助手',system:'系统'})[role]||role||'消息';}
+
+function renderChatMessages(messages){
+  const rows=(messages||[]).filter(m=>m&&!m.uiHidden&&String(m.content||'').trim());
+  if(!rows.length)return'<span class="muted">暂无聊天记录</span>';
+  return`<div class="chat">${rows.map(m=>`<div class="bubble ${m.role==='user'?'u':'a'}"><div class="chat-role">${esc(roleLabel(m.role))}${m.createdAt?` · ${esc(m.createdAt)}`:''}</div>${esc(m.content)}</div>`).join('')}</div>`;
+}
+
+function feedbackSummary(g){
+  const useful=Number(g.usefulCount||0), useless=Number(g.uselessCount||0);
+  if(!useful&&!useless)return`消息 ${Number(g.messageCount||0)} 条`;
+  return`有用 ${useful} · 无用 ${useless}`;
+}
+
+async function loadList(){
+  const list=$('#list');
+  if(tab==='feedback'){
+    const d=await jget(`/api/review/feedback?projectId=${encodeURIComponent(projectId)}`);
+    feedbackGroups=d.groups||[];
+    list.innerHTML=feedbackGroups.length?feedbackGroups.map((g,i)=>`<div class="item ${sel===`feedback:${i}`?'on':''}" onclick="openFeedbackGroup(${i})">
+      <div class="t">${esc(g.conversationTitle||'未命名会话')}</div>
+      <div class="m"><span class="pill ${esc(g.retrospectStatus||'pending')}">${esc(retrospectLabel(g.retrospectStatus))}</span> ${esc(feedbackSummary(g))} · ${esc(g.updatedAt||'')}</div></div>`).join(''):'<div class="empty">暂无可复盘对话</div>';
+  }else if(tab==='pending'){
+    const d=await jget('/api/review/pending?status=active');
+    const items=d.pending||[];
+    const nWait=items.filter(p=>p.status==='pending').length;
+    $('#cntPending').textContent=nWait?`(${nWait})`:'';
+    list.innerHTML=items.length?items.map(p=>{
+      if(p.status==='drafting'){
+        return `<div class="item ${sel===p.id?'on':''}" onclick="openPending('${p.id}')">
+          <div class="t">${esc(p.problem||'(无问题描述)')}</div>
+          <div class="m"><span class="pill drafting">⏳ 正在沉淀<span class="dot-pulse">…</span></span> 复盘草稿生成中 · ${esc(p.createdAt||'')}</div></div>`;
+      }
+      const card=(p.draft||{}).experienceCard;
+      const sub=(p.draft&&p.draft.shouldPersist&&card)?`卡片：${esc(card.name||'')}`:'仅团队记忆/负例';
+      return `<div class="item ${sel===p.id?'on':''}" onclick="openPending('${p.id}')">
+        <div class="t">${esc(p.problem||'(无问题描述)')}</div>
+        <div class="m"><span class="pill pending">待审</span> ${esc(sub)} · ${esc(p.createdAt||'')}</div></div>`;
+    }).join(''):'<div class="empty">暂无待审草稿</div>';
+  }else{
+    const d=await jget('/api/review/cards');
+    const cards=d.cards||[];
+    let html=cards.length?cards.map(c=>`<div class="item" onclick="openCard('${esc(c.name)}')">
+        <div class="t">${esc(c.name)}</div><div class="m">${esc(c.description||'')}</div></div>`).join(''):'<div class="empty">还没有经验卡片</div>';
+    if(d.teamMemory){html+=`<div class="item" onclick="showTeamMemory()"><div class="t">📌 团队记忆 / 雷区</div><div class="m">点击查看</div></div>`;}
+    list.innerHTML=html;
+    window._teamMemory=d.teamMemory||'';
+  }
+}
+
+function retrospectLabel(s){return({not_started:'未复盘',drafting:'正在生成',pending:'待审批',approved:'已沉淀',rejected:'已驳回',failed:'生成失败'})[s]||s||'未复盘';}
+async function openFeedbackGroup(index){
+  const g=feedbackGroups[index];if(!g)return;sel=`feedback:${index}`;loadList();
+  const rows=g.feedback||[], canStart=g.retrospectStatus==='not_started';
+  let messages=[];
+  try{
+    const status=await jget(`/api/conversations/${encodeURIComponent(g.conversationId)}/status?projectId=${encodeURIComponent(projectId)}`);
+    messages=status.messages||[];
+  }catch(_){}
+  $('#main').innerHTML=`<div class="card"><h3>对话复盘 <span class="pill ${esc(g.retrospectStatus)}">${esc(retrospectLabel(g.retrospectStatus))}</span></h3>
+    <div class="kv"><b>会话：</b>${esc(g.conversationTitle||g.conversationId)}</div><div class="kv"><b>推荐快照：</b>${esc(g.artifactId||'—')}</div>
+    <div class="kv"><b>汇总：</b>${esc(feedbackSummary(g))}</div></div>
+    <div class="card"><h3>聊天记录</h3>${renderChatMessages(messages)}</div>
+    <div class="card"><h3>用例反馈</h3>${rows.length?rows.map(r=>`<div class="fbline ${esc(r.verdict)}"><b>${r.verdict==='useful'?'有用':'无用'}</b> · ${esc(r.title||r.caseRef||'未命名用例')}${r.reason?`<div class="muted">${esc(r.reason)}</div>`:''}</div>`).join(''):'<span class="muted">暂无显式反馈，仍可基于对话复盘</span>'}</div>
+    <div class="row"><button class="acc" ${canStart?'':'disabled'} onclick="startRetrospect('${esc(g.conversationId)}','${esc(g.artifactId)}')">开始复盘</button>${canStart?'':`<span class="muted">${esc(retrospectLabel(g.retrospectStatus))}</span>`}</div>`;
+}
+async function startRetrospect(conversationId,artifactId){
+  if(!await UI.confirm('将根据当前推荐快照与完整聊天记录生成复盘草稿，草稿仍需人工审批后才会沉淀。确认开始？',{okText:'开始复盘'}))return;
+  const r=await jpost(`/api/conversations/${encodeURIComponent(conversationId)}/retrospect`,{projectId,artifactId});
+  if(!r.ok)return UI.toast(r.error||'启动复盘失败','err');
+  UI.toast('已开始生成复盘草稿','ok');sel=null;await loadList();
+}
+
+async function loadProjects(){
+  const d=await jget('/api/projects/registry'), projects=d.projects||[];
+  projectId=d.defaultProjectId||projects[0]&&projects[0].id||'atlas-mobile';
+  $('#projectSelect').innerHTML=projects.map(p=>`<option value="${esc(p.id)}">${esc(p.name||p.id)}</option>`).join('');
+  $('#projectSelect').value=projectId;
+}
+function switchProject(){projectId=$('#projectSelect').value||'atlas-mobile';sel=null;loadList();}
+
+async function openPending(pid){
+  sel=pid;loadList();
+  const d=await jget('/api/review/pending?status=');
+  const p=(d.pending||[]).find(x=>x.id===pid);
+  if(!p){$('#main').innerHTML='<div class="empty">草稿不存在</div>';return;}
+  if(p.status==='drafting'){
+    $('#main').innerHTML=`<div class="card"><h3>⏳ 正在沉淀<span class="dot-pulse">…</span></h3>
+      <div class="kv"><b>来源问题：</b>${esc(p.problem||'')}</div>
+      <div class="kv"><b>推荐快照：</b>${esc(p.artifactId||'—')}</div>
+      <div class="muted" style="margin-top:10px">Agent 正在依据对话与反馈复盘、起草经验卡片，完成后这里会自动出现可审批的草稿。</div></div>`;
+    return;
+  }
+  const dr=p.draft||{};
+  const card=dr.experienceCard;
+  const cardHtml=(dr.shouldPersist&&card)?`
+    <div class="kv"><b>名称：</b>${esc(card.name)}</div>
+    <div class="kv"><b>描述：</b>${esc(card.description||'')}</div>
+    <div class="kv"><b>命中条件：</b>${esc(card.whenToUse||'')}</div>
+    <div class="kv"><b>推荐方向：</b>${(card.directions||[]).map(esc).join('；')||'—'}</div>
+    <div class="kv"><b>已知坑：</b>${(card.pitfalls||[]).map(esc).join('；')||'—'}</div>
+    <div class="kv"><b>标签：</b>${(card.tags||[]).map(esc).join('、')} · 置信度 ${esc(card.confidence)}</div>`
+    :'<span class="muted">本次不建议沉淀经验卡片</span>';
+  const neg=(p.negatives||[]).map(n=>`<div class="fbline useless">caseId=${esc(n.caseId)}「${esc(n.title||'')}」 ${n.reason?'· '+esc(n.reason):''}</div>`).join('')||'<span class="muted">无</span>';
+  const chatBlock=(p.chatHistory||[]).length?`<div class="card"><h3>复盘依据 · 聊天记录</h3>${renderChatMessages(p.chatHistory)}</div>`:'';
+  const decided=p.status!=='pending';
+  $('#main').innerHTML=`
+    <div class="card"><h3>复盘草稿 <span class="pill ${p.status}">${p.status}</span></h3>
+      <div class="kv"><b>来源问题：</b>${esc(p.problem||'')}</div>
+      <div class="kv"><b>判断：</b>${esc(dr.reason||'')}</div>
+      <div class="kv"><b>推荐快照：</b>${esc(p.artifactId||'—')}</div>
+    </div>
+    ${chatBlock}
+    <div class="card"><h3>① 拟沉淀的经验卡片</h3>${cardHtml}</div>
+    <div class="card"><h3>② 团队记忆补充</h3>${dr.teamMemoryAddition?esc(dr.teamMemoryAddition):'<span class="muted">无</span>'}</div>
+    <div class="card"><h3>③ 负例（被判无用）</h3>${neg}</div>
+    <div class="card"><h3>原始草稿</h3><pre class="box">${esc(JSON.stringify(dr,null,2))}</pre></div>
+    <div class="row">
+      <button class="good" ${decided?'disabled':''} onclick="decide('approve','${pid}')">✅ 批准并沉淀</button>
+      <button class="bad" ${decided?'disabled':''} onclick="decide('reject','${pid}')">✕ 驳回</button>
+      ${decided?`<span class="muted">已于 ${esc(p.decidedAt||'')} ${p.status}</span>`:''}
+    </div>`;
+}
+
+async function decide(action,pid){
+  if(action==='reject'){
+    const note=await UI.prompt('驳回理由（可空）：',{placeholder:'为什么驳回这条草稿…',okText:'驳回'});
+    if(note===null)return;
+    const r=await jpost('/api/review/reject',{id:pid,note});
+    if(!r.ok)return UI.toast(r.error||'驳回失败','err');
+    UI.toast('已驳回','ok');
+  }else{
+    if(!await UI.confirm('批准后该草稿将沉淀为经验卡片/团队记忆，并影响后续推荐。确认批准？',{okText:'批准并沉淀'}))return;
+    const r=await jpost('/api/review/approve',{id:pid});
+    if(!r.ok)return UI.toast(r.error||'批准失败','err');
+    const ap=r.applied||{};let msg='已批准并沉淀。';
+    if(ap.card)msg+=` 经验卡片：${ap.card}`;
+    if(ap.teamMemory){msg+=' 团队记忆已更新';if(ap.teamMemory.overLimit)msg+=`（⚠️已超长 ${ap.teamMemory.length}/${ap.teamMemory.limit}，建议精简）`;}
+    UI.toast(msg,'ok');
+  }
+  sel=null;$('#main').innerHTML='<div class="empty">已处理</div>';loadList();
+}
+
+async function openCard(name){
+  const r=await jget('/api/review/cards');
+  const c=(r.cards||[]).find(x=>x.name===name);
+  $('#main').innerHTML=`<div class="card"><h3>${esc(name)}</h3>
+    <div class="kv">${esc(c?c.description:'')}</div>
+    <div class="kv"><b>标签：</b>${(c&&c.tags||[]).map(esc).join('、')}</div>
+    <div class="muted" style="margin-top:8px">卡片全文存于 skills/经验卡片/${esc(name)}.md，推荐时 Agent 会按需调阅。</div></div>`;
+}
+function showTeamMemory(){$('#main').innerHTML=`<div class="card"><h3>团队记忆 / 雷区</h3><pre class="box">${esc(window._teamMemory||'')}</pre></div>`;}
+
+loadProjects().then(loadList);
+setInterval(()=>{if(tab==='pending'||tab==='feedback')loadList();},6000);
+</script>
+</body>
+</html>
