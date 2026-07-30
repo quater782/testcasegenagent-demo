@@ -107,7 +107,7 @@
   const insights = {
     99001: {
       ok: true,
-      model: "Mock Reasoning Model",
+      model: "DeepSeek V4 Pro",
       insight: {
         problemSummary: "重连期间旧回调晚于新状态落盘，导致订单状态被回写。",
         actualCategory: { l1: "交易链路", l2: "订单状态", l3: "状态一致性", confidence: 0.97, valid: true },
@@ -136,7 +136,7 @@
     const row = bugRows.find((item) => item.id === Number(id)) || bugRows[0];
     const insight = insights[row.id] || {
       ok: true,
-      model: "Mock Fast Model",
+      model: "GLM-5.2",
       insight: {
         problemSummary: row.title,
         actualCategory: { l1: row.actualL1, l2: row.actualL2, l3: row.subModule, confidence: 0.91, valid: true },
@@ -465,6 +465,14 @@
     note: "针对单个输入项自主调查并输出可溯源的用例推荐",
     tools: profile.tools
   }));
+  const workerSlotModels = [
+    { displayName: "DeepSeek V4 Pro", modelName: "deepseek-v4-pro", configId: "mock-deepseek-v4-pro" },
+    { displayName: "GPT-5.5", modelName: "gpt-5.5", configId: "mock-gpt-5-5" },
+    { displayName: "Kimi K3", modelName: "kimi-k3", configId: "mock-kimi-k3" },
+    { displayName: "GLM-5.2", modelName: "glm-5.2", configId: "mock-glm-5-2" },
+    { displayName: "DeepSeek V4 Pro", modelName: "deepseek-v4-pro", configId: "mock-deepseek-v4-pro" }
+  ];
+  const taskSlotAssignments = [1, 2, 3, 4, 5, 1, 3, 2, 5, 4];
 
   const excelWorkItems = [
     { workItemId: "WI-XLS-01", order: 1, displayName: "弱网重连状态回滚", rawInput: "Excel 第 2 行｜BUG-99001｜弱网重连状态回滚｜P0" },
@@ -495,21 +503,25 @@
       reason: "recommend",
       scenario,
       maxConcurrency: 5,
-      tasks: agentTaskTemplates.map((template, index) => ({
-        taskId: `${executionId}-TASK-${String(index + 1).padStart(2, "0")}`,
-        resultRef: `${executionId}-RESULT-${String(index + 1).padStart(2, "0")}`,
-        workItemId: workItems[index % workItems.length].workItemId,
-        order: index + 1,
-        batchIndex: 1,
-        status: taskStatuses[index],
-        agentName: template.name,
-        displayName: workItems[index % workItems.length].displayName,
-        note: `针对「${workItems[index % workItems.length].displayName}」自主选择工具并推荐测试用例`,
-        toolPlan: template.tools,
-        rawInput: workItems[index % workItems.length].rawInput,
-        model: { displayName: index < 7 ? "Mock Fast" : "Mock Reasoning", modelName: index < 7 ? "mock-fast-v2" : "mock-reasoning-v1", slot: index % 3 + 1 },
-        updatedAt: nowIso()
-      }))
+      tasks: agentTaskTemplates.map((template, index) => {
+        const slot = taskSlotAssignments[index] || index % workerSlotModels.length + 1;
+        const slotModel = workerSlotModels[slot - 1] || workerSlotModels[0];
+        return {
+          taskId: `${executionId}-TASK-${String(index + 1).padStart(2, "0")}`,
+          resultRef: `${executionId}-RESULT-${String(index + 1).padStart(2, "0")}`,
+          workItemId: workItems[index % workItems.length].workItemId,
+          order: index + 1,
+          batchIndex: 1,
+          status: taskStatuses[index],
+          agentName: template.name,
+          displayName: workItems[index % workItems.length].displayName,
+          note: `针对「${workItems[index % workItems.length].displayName}」自主选择工具并推荐测试用例`,
+          toolPlan: template.tools,
+          rawInput: workItems[index % workItems.length].rawInput,
+          model: { ...slotModel, slot },
+          updatedAt: nowIso()
+        };
+      })
     };
   }
 
@@ -1135,7 +1147,7 @@
     if (path === "/api/zentao/auth") return json(method === "GET" ? { account: "mock-user", hasPassword: false, hasApiToken: false, hasCookie: false } : { ok: true });
 
     if (path === "/api/overview") return json({ dbReady: true, bugs: 4286, cases: 9472, images: 812, imagesLocal: 812, insights: 4150, vectors: 9472 });
-    if (path === "/api/llm-slots") return json({ extract: { modelName: "Mock Insight Model", displayName: "Mock Insight Model", assigned: true }, vision: { modelName: "Mock Vision Model", displayName: "Mock Vision Model", assigned: true } });
+    if (path === "/api/llm-slots") return json({ extract: { modelName: "kimi-k3", displayName: "Kimi K3", assigned: true }, vision: { modelName: "glm-5.2", displayName: "GLM-5.2", assigned: true } });
     if (path === "/api/taxonomy") return json({ level1: ["交易链路", "账号体系", "消息中心", "数据同步", "工具能力"] });
     if (path === "/api/bugs") {
       const q = (url.searchParams.get("q") || "").toLowerCase();
@@ -1163,14 +1175,14 @@
     if (path === "/api/token-usage") {
       const runId = url.searchParams.get("runId");
       if (runId) return json({ runId, currency: "CNY", inputTokens: 18240, outputTokens: 4960, totalTokens: 23200, costCny: 0.1846, calls: 12 });
-      return json({ allTime: { currency: "CNY", inputTokens: 1482300, outputTokens: 386200, totalTokens: 1868500, costCny: 14.823, calls: 846, cachedCalls: 126, byModel: [{ model: "Mock Reasoning Model", inputTokens: 982000, outputTokens: 256000, totalTokens: 1238000, inputPricePerM: 6, outputPricePerM: 18, costCny: 10.48, calls: 422, cachedCalls: 86 }, { model: "Mock Fast Model", inputTokens: 500300, outputTokens: 130200, totalTokens: 630500, inputPricePerM: 2, outputPricePerM: 6, costCny: 4.343, calls: 424, cachedCalls: 40 }] } });
+      return json({ allTime: { currency: "CNY", inputTokens: 1482300, outputTokens: 386200, totalTokens: 1868500, costCny: 14.823, calls: 846, cachedCalls: 126, byModel: [{ model: "DeepSeek V4 Pro", inputTokens: 482000, outputTokens: 126000, totalTokens: 608000, costCny: 4.62, calls: 236, cachedCalls: 38 }, { model: "GPT-5.5", inputTokens: 394000, outputTokens: 104000, totalTokens: 498000, costCny: 4.31, calls: 202, cachedCalls: 32 }, { model: "Kimi K3", inputTokens: 330300, outputTokens: 86200, totalTokens: 416500, costCny: 3.17, calls: 214, cachedCalls: 31 }, { model: "GLM-5.2", inputTokens: 276000, outputTokens: 70000, totalTokens: 346000, costCny: 2.723, calls: 194, cachedCalls: 25 }] } });
     }
     if (path === "/api/token-usage/backfill") return json({ ok: true, added: 0, skipped: 846 });
-    if (path === "/api/llm-trace") return json({ rows: [{ ts: "2026-07-29 14:32:07", bugId: 99001, phase: "extract", model: "Mock Insight Model", elapsedMs: 842, ok: true, rawContent: "{\"rootCauseType\":\"并发时序\",\"confidence\":0.97}" }] });
+    if (path === "/api/llm-trace") return json({ rows: [{ ts: "2026-07-29 14:32:07", bugId: 99001, phase: "extract", model: "Kimi K3", elapsedMs: 842, ok: true, rawContent: "{\"rootCauseType\":\"并发时序\",\"confidence\":0.97}" }] });
 
     if (path === "/api/agent/tool-catalog") {
       return json({
-        mainAgentModel: { displayName: "对话与调度模型", modelName: "mock-orchestrator-v2" },
+        mainAgentModel: { displayName: "GPT-5.5", modelName: "gpt-5.5" },
         main: [
           { name: "intent_clarifier", label: "意图澄清", summary: "追问范围与约束", alwaysOn: true },
           { name: "conversation_memory", label: "会话记忆", summary: "保留用户澄清", alwaysOn: true },
