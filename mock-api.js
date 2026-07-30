@@ -392,18 +392,79 @@
   ];
   const textDemoPrompt = `本次版本有 10 个修改点，请分别推荐回归用例：\n${defaultWorkItems.map((item) => `${item.order}. ${item.displayName}`).join("\n")}`;
 
-  const agentTaskTemplates = [
-    { name: "Bug 关联检索 Agent", tool: "search_bug_case_pairs", note: "检索缺陷与历史用例的直接关联" },
-    { name: "同模块用例检索 Agent", tool: "search_cases", note: "按模块、标签与测试类型召回已有用例" },
-    { name: "语义召回 Agent", tool: "vector_search", note: "使用向量相似度补充语义相关覆盖" },
-    { name: "项目知识检索 Agent", tool: "dify_search", note: "读取设计说明与已审批团队经验" },
-    { name: "跨项目关系 Agent", tool: "list_related_projects", note: "沿项目关系图寻找可解释的历史风险" },
-    { name: "历史缺陷检索 Agent", tool: "search_history", note: "查找相似根因与复发模式" },
-    { name: "边界风险分析 Agent", tool: "risk_analysis", note: "识别弱网、生命周期与并发组合边界" },
-    { name: "用例生成 Agent", tool: "generate_cases", note: "把未覆盖风险转为可执行步骤" },
-    { name: "覆盖去重 Agent", tool: "dedupe_cases", note: "合并重复用例并保留证据链" },
-    { name: "结果编排 Agent", tool: "build_workbook", note: "整理输入项、推荐理由与最终用例清单" }
+  const recommendationTaskProfiles = [
+    {
+      tools: [
+        { tool: "get_bug", action: "读取 BUG-99001 完整正文、严重程度与关联用例", observation: "取得问题根因、解决方案与 2 条直接关联用例" },
+        { tool: "search_pairs", action: "检索弱网重连的缺陷↔用例真值配对", observation: "命中重连状态回滚的历史配对证据" },
+        { tool: "search_cases", action: "查找可复用的弱网状态一致性用例", observation: "已有用例可覆盖主路径，仅需补充竞态窗口" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_cases", action: "检索前后台切换与回调顺序用例", observation: "命中生命周期切换的已有回归用例" },
+        { tool: "search_project_knowledge", action: "查询重连回调与生命周期设计约束", observation: "确认前后台切换期间的状态机收敛规则" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_cases", action: "检索重复回调与幂等写入用例", observation: "发现可复用的幂等校验用例" },
+        { tool: "search_bugs_vector", action: "语义检索旧回调覆盖新状态的相似缺陷", observation: "召回两个并发时序相似缺陷" },
+        { tool: "get_case", action: "读取候选用例的完整步骤", observation: "确认步骤已覆盖重复回调与版本戳校验" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_cases", action: "检索 Wi-Fi 与移动网络切换场景", observation: "命中网络切换恢复基准用例" },
+        { tool: "search_project_knowledge", action: "读取网络恢复与重试队列设计", observation: "确认网络恢复后的最终一致性约束" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_cases", action: "检索缓存版本冲突处理用例", observation: "命中本地缓存版本号冲突用例" },
+        { tool: "search_history", action: "回查团队历史推荐与取舍", observation: "历史结果建议重点验证旧写入拒绝策略" },
+        { tool: "get_case", action: "读取缓存冲突候选用例详情", observation: "确认已有步骤能够覆盖本次修改" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_history", action: "回查进程中断与冷启动恢复问题", observation: "找到一次相似恢复链路推荐记录" },
+        { tool: "search_cases", action: "检索冷启动数据恢复用例", observation: "已有用例覆盖主路径，异常窗口仍有盲点" },
+        { tool: "search_skills", action: "检索状态恢复相关团队经验", observation: "命中状态机最终一致性经验卡" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_pairs", action: "检索连续重连的缺陷与用例配对", observation: "命中多轮重试后状态收敛证据" },
+        { tool: "search_cases", action: "查找连续三次重连的已有覆盖", observation: "现有用例覆盖单次重连，多轮组合需补充" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_cases", action: "检索多端同时写入与冲突合并用例", observation: "命中多端数据同步基准用例" },
+        { tool: "search_bugs_vector", action: "语义检索并发写入冲突缺陷", observation: "召回版本向量冲突的相似根因" },
+        { tool: "search_project_knowledge", action: "读取多端合并策略约束", observation: "确认服务端版本优先与客户端重放规则" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_pairs", action: "检索账号切换与数据隔离缺陷配对", observation: "命中一条跨账号串写的历史高风险证据" },
+        { tool: "search_cases", action: "检索退出登录与账号切换用例", observation: "已有用例未覆盖重连中的账号切换窗口" },
+        { tool: "search_skills", action: "检索账号数据隔离经验卡", observation: "团队约定要求把该场景提升为 P0" }
+      ]
+    },
+    {
+      tools: [
+        { tool: "search_cases", action: "检索低电量后台冻结与恢复用例", observation: "命中后台恢复基础用例" },
+        { tool: "search_history", action: "回查低电量模式下的历史推荐", observation: "历史记录建议精简验证，不扩展无关场景" }
+      ]
+    }
   ];
+  const agentTaskTemplates = recommendationTaskProfiles.map((profile) => ({
+    name: "测试用例推荐 Agent",
+    note: "针对单个输入项自主调查并输出可溯源的用例推荐",
+    tools: profile.tools
+  }));
 
   const excelWorkItems = [
     { workItemId: "WI-XLS-01", order: 1, displayName: "弱网重连状态回滚", rawInput: "Excel 第 2 行｜BUG-99001｜弱网重连状态回滚｜P0" },
@@ -433,6 +494,7 @@
       status,
       reason: "recommend",
       scenario,
+      maxConcurrency: 5,
       tasks: agentTaskTemplates.map((template, index) => ({
         taskId: `${executionId}-TASK-${String(index + 1).padStart(2, "0")}`,
         resultRef: `${executionId}-RESULT-${String(index + 1).padStart(2, "0")}`,
@@ -440,10 +502,10 @@
         order: index + 1,
         batchIndex: Math.floor(index / 5) + 1,
         status: taskStatuses[index],
-        agentName: index === 9 && scenario === "excel" ? "Excel 结果编排 Agent" : template.name,
-        displayName: index === 9 && scenario === "excel" ? "Excel 结果编排 Agent" : template.name,
-        tool: template.tool,
-        note: index === 9 && scenario === "excel" ? "整理 Excel 输入行、推荐理由与最终用例清单" : template.note,
+        agentName: template.name,
+        displayName: workItems[index % workItems.length].displayName,
+        note: `针对「${workItems[index % workItems.length].displayName}」自主选择工具并推荐测试用例`,
+        toolPlan: template.tools,
         rawInput: workItems[index % workItems.length].rawInput,
         model: { displayName: index < 7 ? "Mock Fast" : "Mock Reasoning", modelName: index < 7 ? "mock-fast-v2" : "mock-reasoning-v1", slot: index % 3 + 1 },
         updatedAt: nowIso()
@@ -460,9 +522,12 @@
         model: task.model,
         thoughtCard: {
           summary: task.note,
-          steps: [
-            { step: 1, tool: task.tool, thought: task.note, resultSummary: index < cases.length ? `命中：${cases[index].title}` : "已完成本子任务的结构化分析" }
-          ]
+          steps: (task.toolPlan || []).map((call, stepIndex) => ({
+            step: stepIndex + 1,
+            tool: call.tool,
+            thought: call.action,
+            resultSummary: call.observation
+          }))
         },
         rationale: task.note,
         recommendedCases: cases.length ? [cases[index % cases.length]] : []
@@ -481,7 +546,7 @@
         { messageId: "MSG-MOCK-01", role: "user", type: "chat", content: textDemoPrompt, createdAt: "2026-07-29 14:01" },
         { messageId: "MSG-MOCK-02", role: "assistant", type: "chat", content: "收到 10 个修改点。派发前确认一个推荐口径：优先复用已有用例，只有未覆盖的风险才生成新用例，对吗？", createdAt: "2026-07-29 14:01" },
         { messageId: "MSG-MOCK-03", role: "user", type: "chat", content: "对，已有用例优先；未覆盖的风险再生成新用例，并保留推荐依据。", createdAt: "2026-07-29 14:02" },
-        { messageId: "MSG-MOCK-DISPATCH", role: "assistant", type: "chat", content: "收到。我保留你的约束并负责后续沟通；检索、风险分析和用例推荐已拆成 10 个子任务，交给子 Agent 并行执行。", createdAt: "2026-07-29 14:02" },
+        { messageId: "MSG-MOCK-DISPATCH", role: "assistant", type: "chat", content: "收到。我保留你的约束并负责后续沟通；现在为 10 个输入项分别创建同质的测试用例推荐 Agent，每个 Agent 都会在 ReAct 循环中自主选择工具并完成推荐。", createdAt: "2026-07-29 14:02" },
         { messageId: "MSG-MOCK-04", role: "assistant", type: "execution", content: "", executionId: execution.executionId, status: execution.status, createdAt: "2026-07-29 14:02" },
         { messageId: "MSG-MOCK-05", role: "assistant", type: "chat", content: "子 Agent 已完成汇总：锁定 2 条 Bug 关联必回归用例，并补充同模块、历史风险与 5 个新增盲点。你可以继续问我推荐依据、范围取舍或执行优先级。", createdAt: "2026-07-29 14:03" }
       ],
@@ -701,8 +766,8 @@
         role: "assistant",
         type: "chat",
         content: scenario === "excel"
-          ? "已刷新为批量演示会话。接下来会模拟用户发送一个包含 10 行修改点的 Excel 文件。"
-          : "已刷新当前演示会话。主 Agent 会先追问推荐口径，再把 10 条输入逐项派给子 Agent。",
+          ? "已刷新为批量演示会话。接下来会模拟用户发送一个包含 10 行修改点的 Excel 文件，并为每行创建同质的测试用例推荐 Agent。"
+          : "已刷新当前演示会话。主 Agent 会先追问推荐口径，再为 10 条输入分别创建同质的测试用例推荐 Agent。",
         createdAt: nowIso()
       }],
       activeArtifact: null,
@@ -764,32 +829,44 @@
       const offsets = [0, 130, 55, 210, 95];
       batchIndexes.forEach((taskIndex, localIndex) => {
         const task = execution.tasks[taskIndex];
-        const template = agentTaskTemplates[taskIndex];
+        const calls = Array.isArray(task.toolPlan) ? task.toolPlan : [];
         const offset = offsets[localIndex] || 0;
         scheduleFor(record, baseDelay + offset, () => {
           emitRuntime(record.conversation.conversationId, "thought_delta", {
             taskId: task.taskId,
             step: 1,
             streamKind: "reasoning",
-            text: `Thought｜理解第 ${taskIndex + 1} 个输入，规划证据检索与用例覆盖。`,
-            delta: `Thought｜理解第 ${taskIndex + 1} 个输入，规划证据检索与用例覆盖。`
+            text: `Thought｜理解「${workItems[taskIndex].displayName}」，判断风险等级并规划自主调查。`,
+            delta: `Thought｜理解「${workItems[taskIndex].displayName}」，判断风险等级并规划自主调查。`
           });
         });
-        scheduleFor(record, baseDelay + 820 + offset, () => {
-          emitRuntime(record.conversation.conversationId, "tool_started", {
-            taskId: task.taskId,
-            tool: template.tool,
-            querySummary: `Action｜${template.note}`
+        calls.forEach((call, callIndex) => {
+          const callStart = baseDelay + 650 + callIndex * 800 + offset;
+          scheduleFor(record, callStart, () => {
+            emitRuntime(record.conversation.conversationId, "tool_started", {
+              taskId: task.taskId,
+              tool: call.tool,
+              querySummary: `Action｜${call.action}`
+            });
           });
-        });
-        scheduleFor(record, baseDelay + 2380 + offset, () => {
-          emitRuntime(record.conversation.conversationId, "tool_finished", {
-            taskId: task.taskId,
-            tool: template.tool,
-            resultSummary: taskIndex < 2
-              ? "Observation｜命中 Bug 直接关联用例，保留为必回归"
-              : "Observation｜已取得可解释的历史证据与候选覆盖"
+          scheduleFor(record, callStart + 520, () => {
+            emitRuntime(record.conversation.conversationId, "tool_finished", {
+              taskId: task.taskId,
+              tool: call.tool,
+              resultSummary: `Observation｜${call.observation}`
+            });
           });
+          if (callIndex < calls.length - 1) {
+            scheduleFor(record, callStart + 680, () => {
+              emitRuntime(record.conversation.conversationId, "thought_delta", {
+                taskId: task.taskId,
+                step: callIndex + 2,
+                streamKind: "reasoning",
+                text: "Thought｜根据上一轮观察继续收窄范围，并自主选择下一项调查工具。",
+                delta: "Thought｜根据上一轮观察继续收窄范围，并自主选择下一项调查工具。"
+              });
+            });
+          }
         });
       });
     }
@@ -808,7 +885,7 @@
         const task = current.tasks[taskIndex];
         emitRuntime(record.conversation.conversationId, "worker_progress", {
           taskId: task.taskId,
-          text: `Observation｜${task.agentName} 已形成可执行推荐`
+          text: `Observation｜针对「${workItems[taskIndex].displayName}」已完成证据聚合并形成可执行推荐`
         });
       });
     }
@@ -937,11 +1014,11 @@
     record.conversation.phase = 2;
     beginMainTurn(record, {
       thought: "Thought｜推荐口径已明确，主 Agent 只保留沟通与验收约束。",
-      secondThought: "Thought｜把 10 个输入拆成两批，每批 5 个子 Agent 并行执行。",
+      secondThought: "Thought｜为 10 个输入各创建一个同质推荐 Agent，放入 5 槽并发队列。",
       tool: "task_dispatcher",
-      action: "Action｜创建 10 个检索与推荐子任务",
-      observation: "Observation｜任务依赖已整理，可按 5 + 5 两批并行派发",
-      answer: "范围已确认。我负责保持对话和验收约束；现在将缺陷关联、已有用例检索、知识检索、风险分析和用例生成拆成 10 个子任务，交给子 Agent 分两批并行完成。",
+      action: "Action｜为 10 个输入项创建同质的测试用例推荐任务",
+      observation: "Observation｜10 个推荐 Agent 已进入 5 槽并发队列，空闲槽位会自动接手下一项",
+      answer: "范围已确认。我负责保持对话和验收约束；现在为 10 个输入项各创建一个测试用例推荐 Agent。它们会在 5 个并发槽位中运行，并各自在 ReAct 循环里自主选择检索工具、聚合证据并输出推荐。",
       onComplete: () => startExecution(record, { scenario: record.scenario || "text" })
     });
     return { ok: true, queued: true };
@@ -1098,12 +1175,14 @@
           { name: "task_dispatcher", label: "任务派发", summary: "把检索与推荐拆给子 Agent", alwaysOn: true }
         ],
         worker: [
-          { name: "search_bug_case_pairs", label: "缺陷-用例关联", summary: "直接关联检索", alwaysOn: true },
-          { name: "search_cases", label: "已有用例检索", summary: "标签与模块检索", alwaysOn: true },
-          { name: "vector_search", label: "向量检索", summary: "语义召回", alwaysOn: true },
-          { name: "dify_search", label: "项目知识库", summary: "Mock 项目知识", flag: "use_dify", default: true },
-          { name: "generate_cases", label: "用例生成", summary: "生成可执行步骤", alwaysOn: true },
-          { name: "build_workbook", label: "Excel 编排", summary: "批量结果整理", alwaysOn: true }
+          { name: "search_pairs", label: "缺陷↔用例配对", summary: "检索历史真值配对", alwaysOn: true },
+          { name: "search_cases", label: "已有用例检索", summary: "寻找可复用 canonical 用例", alwaysOn: true },
+          { name: "get_bug", label: "读取缺陷详情", summary: "取得问题、方案、严重程度与关联用例", alwaysOn: true },
+          { name: "get_case", label: "读取用例详情", summary: "核对候选用例的完整步骤", alwaysOn: true },
+          { name: "search_bugs_vector", label: "缺陷向量检索", summary: "召回语义相似的历史缺陷", flag: "use_vector", default: true },
+          { name: "search_project_knowledge", label: "项目知识库", summary: "查询设计、SDK 与测试策略", flag: "use_dify", default: true },
+          { name: "search_skills", label: "团队经验检索", summary: "查询已审批经验卡", alwaysOn: true },
+          { name: "search_history", label: "历史推荐回查", summary: "参考过往推荐与取舍", alwaysOn: true }
         ]
       });
     }
@@ -1148,11 +1227,11 @@
         });
         beginMainTurn(record, {
           thought: "Thought｜识别到一个包含 10 行修改点的 Excel 文件，需要先解析行结构再派发。",
-          secondThought: "Thought｜每行对应一个推荐任务，按 5 + 5 两批并行处理。",
+          secondThought: "Thought｜每行对应一个同质推荐 Agent，放入 5 槽并发队列。",
           tool: "task_dispatcher",
-          action: "Action｜解析 Excel 并创建 10 个子任务",
-          observation: "Observation｜10 行数据均通过格式校验，可进入检索与推荐",
-          answer: "已收到包含 10 行修改点的 Excel 文件。表格解析、检索、风险分析、用例生成和结果编排已逐项派给 10 个子 Agent，接下来分两批并行执行。",
+          action: "Action｜解析 Excel，并为每一行创建测试用例推荐任务",
+          observation: "Observation｜10 行数据均通过格式校验，10 个同质推荐 Agent 已进入 5 槽队列",
+          answer: "已收到包含 10 行修改点的 Excel 文件。我已为每一行创建一个测试用例推荐 Agent；它们会在 5 个并发槽位中运行，并根据各自输入自主调用所需工具。",
           onComplete: () => startExecution(record, { scenario: "excel" })
         });
         return json({ ok: true, rowCount: excelWorkItems.length, imported: excelWorkItems.length, queued: true });
