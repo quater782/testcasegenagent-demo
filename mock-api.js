@@ -500,7 +500,7 @@
         resultRef: `${executionId}-RESULT-${String(index + 1).padStart(2, "0")}`,
         workItemId: workItems[index % workItems.length].workItemId,
         order: index + 1,
-        batchIndex: Math.floor(index / 5) + 1,
+        batchIndex: 1,
         status: taskStatuses[index],
         agentName: template.name,
         displayName: workItems[index % workItems.length].displayName,
@@ -895,13 +895,13 @@
       {
         after: 5200,
         count: 2,
-        statuses: ["succeeded", "running", "succeeded", "running", "running", "pending", "pending", "pending", "pending", "pending"],
+        statuses: ["succeeded", "running", "succeeded", "running", "running", "running", "running", "pending", "pending", "pending"],
         completed: [0, 2]
       },
       {
         after: 6500,
         count: 4,
-        statuses: ["succeeded", "succeeded", "succeeded", "running", "succeeded", "pending", "pending", "pending", "pending", "pending"],
+        statuses: ["succeeded", "succeeded", "succeeded", "running", "succeeded", "running", "running", "running", "running", "pending"],
         completed: [1, 4]
       },
       {
@@ -930,7 +930,9 @@
       }
     ];
     updates.forEach((update) => scheduleFor(record, update.after, () => applyExecutionSnapshot(update)));
-    scheduleFor(record, 7600, () => emitWorkerReact([5, 6, 7, 8, 9], 0));
+    scheduleFor(record, 5200, () => emitWorkerReact([5, 6], 0));
+    scheduleFor(record, 6500, () => emitWorkerReact([7, 8], 0));
+    scheduleFor(record, 7600, () => emitWorkerReact([9], 0));
 
     scheduleFor(record, 14600, () => {
       const completed = makeExecution("completed", agentTaskTemplates.length, workItems, scenario, executionId);
